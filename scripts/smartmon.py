@@ -263,6 +263,14 @@ class Device(collections.namedtuple('DeviceBase', 'path opts')):
         return self.opts.type
 
     @property
+    def sub_type(self):
+        return self._sub_type
+
+    @sub_type.setter
+    def sub_type(self, new_sub_type):
+        self._sub_type = new_sub_type
+
+    @property
     def base_labels(self):
         return {'device': self.path, 'disk': self.type.partition('+')[2] or '0'}
 
@@ -366,6 +374,12 @@ def device_smart_capabilities(device):
         return True, True
 
     groups = device_info(device)
+
+    # NVME devices are SMART capable
+    if len([g for g in groups if 'nvme' in g[0].lower()]) > 0:
+        device.sub_type = 'nvme'
+
+        return True, True
 
     state = {
         g[1].split(' ', 1)[0]
@@ -578,7 +592,7 @@ def collect_disks_smart_metrics(wakeup_disks, by_id, include_nvme):
             collect_ata_metrics(device)
             collect_ata_error_count(device)
 
-        if include_nvme and device.type == 'nvme':
+        if include_nvme and (device.type == 'nvme' or device.sub_type == 'nvme'):
             collect_nvme_metrics(device)
 
 
@@ -594,7 +608,8 @@ def main():
 
     metrics["smartctl_version"].labels(smart_ctl_version()).set(1)
 
-    collect_disks_smart_metrics(args.wakeup_disks, args.by_id, args.include_nvme)
+    collect_disks_smart_metrics(
+        args.wakeup_disks, args.by_id, args.include_nvme)
     print(generate_latest(registry).decode(), end="")
 
 
