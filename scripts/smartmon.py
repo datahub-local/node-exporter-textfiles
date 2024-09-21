@@ -602,7 +602,7 @@ def main():
                         help="Wake up disks to collect live stats")
     parser.add_argument('--by-id', dest='by_id', action='store_true',
                         help="Use /dev/disk/by-id/X instead of /dev/sdX to index devices")
-    parser.add_argument('--include-nvme', dest='include_nvme', action='store_true',
+    parser.add_argument('--include-nvme', dest='include_nvme', action='store_true', default=True,
                         help="Include metrics for NVMe drives")
     args = parser.parse_args(sys.argv[1:])
 
