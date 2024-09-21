@@ -29,6 +29,7 @@ RUN apt-get -q update && \
     update-pciids -q
 
 COPY entrypoint.sh /entrypoint.sh
+COPY scripts/* /scripts/
 
 RUN chmod 755 /entrypoint.sh
 
