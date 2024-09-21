@@ -1,20 +1,35 @@
-FROM python:3.10-slim
+FROM public.ecr.aws/debian/debian:stable-slim
 
-ARG DAGSTER_VERSION=1.7.9
+RUN apt-get -q update && \
+    apt-get -q upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+        jq \
+        moreutils \
+        moreutils \
+        nvme-cli \
+        pciutils \
+        smartmontools \
+        wget \
+        python3 \
+        python3-prometheus-client \
+        gpg \
+        gpg-agent && \
+    mkdir -p /scripts && \
+    git clone --depth 1 --branch master --single-branch \
+        https://github.com/prometheus-community/node-exporter-textfile-collector-scripts.git \
+        /scripts && \
+    chmod 755 /scripts/* && \
+    /usr/sbin/update-smart-drivedb && \
+    apt-get remove -y gpg git gpg-agent && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    update-pciids -q
 
-# All packages are hard-pinned to `dagster`, so setting the version on just `DAGSTER` will ensure
-# compatible versions.
-RUN pip install \
-    dagster==${DAGSTER_VERSION} \
-    dagster-aws \
-    dagster-celery-k8s \
-    dagster-celery[flower,redis,kubernetes] \
-    dagster-dbt \
-    dagster-embedded-elt \
-    dagster-graphql \
-    dagster-k8s \
-    dagster-postgres \
-    dagster-pyspark \
-    dagster-spark \
-    dagster-ssh \
-    dagster-webserver
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod 755 /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
