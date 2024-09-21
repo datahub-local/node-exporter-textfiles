@@ -31,6 +31,6 @@ RUN apt-get -q update && \
 COPY entrypoint.sh /entrypoint.sh
 COPY scripts/* /scripts/
 
-RUN chmod 755 /entrypoint.sh
+RUN chmod 755 /entrypoint.sh /scripts/*.sh /scripts/*.py
 
 ENTRYPOINT ["/entrypoint.sh"]
