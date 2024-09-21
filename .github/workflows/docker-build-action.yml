@@ -1,0 +1,58 @@
+name: Docker Push
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  docker-build-action:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Obtain Dagster version
+        id: versionSelector
+        run: |
+          DAGSTER_VERSION=$(curl -s https://pypi.org/pypi/dagster/json | jq -r '.info.version')
+          echo "DAGSTER_VERSION=$DAGSTER_VERSION" >> $GITHUB_ENV
+          
+          if [[ ! -z "$(docker images -q ghcr.io/${{ github.repository }}:$DAGSTER_VERSION)" ]]; then
+            echo "Skipping version $DAGSTER_VERSION: it already exists."
+            echo "skipBuild=TRUE" >> $GITHUB_OUTPUT
+          fi
+
+          echo "skipBuild=FALSE" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          pull: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.DAGSTER_VERSION }}
+          build-args: |
+            DAGSTER_VERSION=${{ env.DAGSTER_VERSION }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        if: ${{ needs.versionSelector.outputs.skipBuild != 'TRUE' }}
