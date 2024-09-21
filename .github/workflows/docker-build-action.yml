@@ -46,13 +46,11 @@ jobs:
           cache-to: type=gha,mode=max
       
       -   name: Clean old image versions
-          uses: davahome/ghcr-cleanup@v1.1
+          uses: quartx-analytics/ghcr-cleaner@v1
           with:
-              token: ${{ secrets.GITHUB_TOKEN }}
-              
-              package: ${{ github.repository }}              
-              owner: ${{ github.repository_owner }}
-              
-              minimum_days: 60
-              keep_versions: 30
-              delete_untagged: 1
+            owner-type: org
+            token: ${{ secrets.GITHUB_TOKEN }}
+            repository_owner: ${{ github.repository_owner }}
+            repository-name: ${{ github.repository }}
+            delete-untagged: false
+            keep-at-most: 10
