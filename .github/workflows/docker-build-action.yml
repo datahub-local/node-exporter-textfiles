@@ -45,12 +45,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
-      # -   name: Clean old image versions
-      #     uses: davahome/ghcr-cleanup@v1.1
-      #     with:
-      #         token: ${{ secrets.GITHUB_TOKEN }}
+      -   name: Clean old image versions
+          uses: davahome/ghcr-cleanup@v1.1
+          with:
+              token: ${{ secrets.GITHUB_TOKEN }}
               
-      #         package: ${{ github.repository }}              
-      #         owner: user
+              package: ${{ github.repository }}              
+              owner: user
               
-      #         keep_versions: 20
+              keep_versions: 5
