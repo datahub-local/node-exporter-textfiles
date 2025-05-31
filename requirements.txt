@@ -1,1 +1,2 @@
-prometheus-client
+prometheus-client==0.*
+pynutclient==2.*
