@@ -1,4 +1,4 @@
-FROM public.ecr.aws/debian/debian:stable-slim
+FROM public.ecr.aws/docker/library/python:3.12-bookworm
 
 RUN apt-get -q update && \
     apt-get -q upgrade -y && \
@@ -7,16 +7,10 @@ RUN apt-get -q update && \
         git \
         jq \
         moreutils \
-        moreutils \
         nvme-cli \
         pciutils \
         smartmontools \
-        wget \
-        python3 \
-        python3-pip \
-        gpg \
-        gpg-agent && \
-    pip3 install --no-cache-dir -r /requirements.txt && \
+        wget && \
     mkdir -p /scripts && \
     git clone --depth 1 --branch master --single-branch \
         https://github.com/prometheus-community/node-exporter-textfile-collector-scripts.git \
@@ -30,7 +24,10 @@ RUN apt-get -q update && \
     update-pciids -q
 
 COPY entrypoint.sh /entrypoint.sh
+COPY requirements.txt /requirements.txt
 COPY scripts/* /scripts/
+
+RUN pip install --no-cache-dir -r /requirements.txt
 
 RUN chmod 755 /entrypoint.sh /scripts/*.sh /scripts/*.py
 
