@@ -13,9 +13,10 @@ RUN apt-get -q update && \
         smartmontools \
         wget \
         python3 \
-        python3-prometheus-client \
+        python3-pip \
         gpg \
         gpg-agent && \
+    pip3 install --no-cache-dir -r /requirements.txt && \
     mkdir -p /scripts && \
     git clone --depth 1 --branch master --single-branch \
         https://github.com/prometheus-community/node-exporter-textfile-collector-scripts.git \
