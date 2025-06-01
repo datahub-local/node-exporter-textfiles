@@ -44,14 +44,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
-      -   name: Clean old image versions
-          uses: dataaxiom/ghcr-cleanup-action@v1
-          with:
-              token: ${{ secrets.GITHUB_TOKEN }}
-              
-              owner: ${{ github.repository_owner }}
-              package: ${{ github.repository }}              
-              
-              keep-n-tagged: 10              
-              delete-untagged: true
+
+      - name: Get lower case repository name
+        id: lower_repo
+        run: |
+          export REPO_NAME=${{ github.event.repository.name }}
+          echo "repo_name=${REPO_NAME@L}" >> $GITHUB_OUTPUT
+      - name: Prune old packages
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+          dry-run: false
+          delete-untagged: true
+          delete-ghost-images: true
+          delete-partial-images: true
+          keep-n-tagged: 10
