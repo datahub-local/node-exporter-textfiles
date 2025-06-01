@@ -4,18 +4,21 @@ if [ -n "$DEBUG" ]; then
     set -ex
 fi
 
-SCRIPT="${SCRIPT:-smartmon.sh}"
-OUTPUT_FILENAME="${OUTPUT_FILENAME:-${SCRIPT%.*}}"
+SCRIPTS_PATH="${SCRIPTS_PATH:-/scripts}"
 OUTPUT_PATH="${OUTPUT_PATH:-/var/lib/node_exporter}"
 INTERVAL="${INTERVAL:-300}"
 
-if [ ! -f "/scripts/${SCRIPT}" ]; then
-    echo "Script ${SCRIPT} doesn't exist. Exiting 1"
+PYTHON_SCRIPTS=("${SCRIPTS_PATH}"/*.py)
+if [ ${#PYTHON_SCRIPTS[@]} -eq 0 ]; then
+    echo "No Python scripts found in ${SCRIPTS_PATH}. Exiting 1"
     exit 1
 fi
 
-echo "Starting ${SCRIPT} loop ..."
+echo "Starting Python scripts loop ..."
 while true; do
-    "/scripts/${SCRIPT}" "${@}" | sponge "${OUTPUT_PATH}/${OUTPUT_FILENAME}.prom"
+    for script in "${PYTHON_SCRIPTS[@]}"; do
+        script_name=$(basename "$script" .py)
+        "$script" "${@}" | sponge "${OUTPUT_PATH}/${script_name}.prom"
+    done
     sleep "${INTERVAL}"
 done

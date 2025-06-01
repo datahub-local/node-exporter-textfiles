@@ -46,11 +46,12 @@ jobs:
           cache-to: type=gha,mode=max
       
       -   name: Clean old image versions
-          uses: davahome/ghcr-cleanup@v1.1
+          uses: dataaxiom/ghcr-cleanup-action@v1
           with:
               token: ${{ secrets.GITHUB_TOKEN }}
               
+              owner: ${{ github.repository_owner }}
               package: ${{ github.repository }}              
-              owner: user
               
-              keep_versions: 5
+              keep-n-tagged: 10              
+              delete-untagged: true
