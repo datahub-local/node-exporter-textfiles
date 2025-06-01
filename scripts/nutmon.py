@@ -29,6 +29,7 @@ registry = CollectorRegistry()
 namespace = "network_ups_tools"
 
 # Device info labels as per nut_exporter
+DEVICE_NAME_LABEL = "ups"
 INFO_LABELS = [
     "battery.type",
     "battery.mfr.date",
@@ -49,7 +50,6 @@ INFO_LABELS = [
     "ups.model",
     "ups.productid",
     "ups.vendorid",
-
 ]
 
 
@@ -114,6 +114,7 @@ def collect_nut_metrics(
         k.replace(".", "_").replace("-", "_"): vars.get(k, "")
         for k in INFO_LABELS
     }
+    device_info[DEVICE_NAME_LABEL] = ups_name
     metrics["device_info"].labels(**device_info).set(1)
 
     # Export all numeric variables as metrics
@@ -128,7 +129,7 @@ def collect_nut_metrics(
             continue
 
         if metric_name not in metrics:
-            metrics[metric_name] = make_gauge(metric_name, f"NUT variable {k}", ["ups"])
+            metrics[metric_name] = make_gauge(metric_name, f"NUT variable {k}", [DEVICE_NAME_LABEL])
 
         metrics[metric_name].labels(ups_name).set(value)
 
@@ -141,7 +142,7 @@ def collect_nut_metrics(
     for flag in statuses or NUT_STATUS_FLAGS:
         if "ups_status" not in metrics:
             metrics["ups_status"] = make_gauge(
-                "ups_status", "NUT UPS status flag", ["ups", "flag"]
+                "ups_status", "NUT UPS status flag", [DEVICE_NAME_LABEL, "flag"]
             )
         metrics["ups_status"].labels(ups_name, flag).set(
             1 if flag in status_flags else 0
