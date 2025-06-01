@@ -31,20 +31,18 @@ namespace = "network_ups_tools"
 # Device info labels as per nut_exporter
 DEVICE_NAME_LABEL = "ups"
 INFO_LABELS = [
+    DEVICE_NAME_LABEL,
     "battery.type",
     "battery.mfr.date",
-
     "device.model",
     "device.mfr",
     "device.serial",
     "device.type",
-
     "driver.name",
     "driver.version",
     "driver.version.data",
     "driver.version.internal",
     "driver.version.usb",
-
     "ups.beeper.status",
     "ups.mfr",
     "ups.model",
@@ -62,9 +60,10 @@ def make_gauge(name, desc, labels):
         registry=registry,
     )
 
-def parse_nut_vars(vars_raw):
+
+def parse_nut_vars(ups_name, vars_raw):
     # Convert keys to str, and values to float if possible, else str (force str for some keys)
-    vars = {}
+    vars = {DEVICE_NAME_LABEL: ups_name}
     for k, v in vars_raw.items():
         key = k.decode("utf-8") if isinstance(k, bytes) else k
         if isinstance(v, bytes):
@@ -107,12 +106,11 @@ def collect_nut_metrics(
             raise Exception("Multiple UPS devices found. Specify --ups.")
 
     vars_raw = client.GetUPSVars(ups_name)
-    vars = parse_nut_vars(vars_raw)
+    vars = parse_nut_vars(ups_name, vars_raw)
 
     # Device info
     device_info = {
-        k.replace(".", "_").replace("-", "_"): vars.get(k, "")
-        for k in INFO_LABELS
+        k.replace(".", "_").replace("-", "_"): vars.get(k, "") for k in INFO_LABELS
     }
     device_info[DEVICE_NAME_LABEL] = ups_name
     metrics["device_info"].labels(**device_info).set(1)
@@ -129,16 +127,14 @@ def collect_nut_metrics(
             continue
 
         if metric_name not in metrics:
-            metrics[metric_name] = make_gauge(metric_name, f"NUT variable {k}", [DEVICE_NAME_LABEL])
+            metrics[metric_name] = make_gauge(
+                metric_name, f"NUT variable {k}", [DEVICE_NAME_LABEL]
+            )
 
         metrics[metric_name].labels(ups_name).set(value)
 
     # Special handling for ups.status
-    status_flags = set(
-        (
-            vars.get("ups.status", "")
-        ).split()
-    )
+    status_flags = set((vars.get("ups.status", "")).split())
     for flag in statuses or NUT_STATUS_FLAGS:
         if "ups_status" not in metrics:
             metrics["ups_status"] = make_gauge(
