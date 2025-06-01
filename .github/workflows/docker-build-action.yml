@@ -44,12 +44,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Get lower case repository name
-        id: lower_repo
-        run: |
-          export REPO_NAME=${{ github.event.repository.name }}
-          echo "repo_name=${REPO_NAME@L}" >> $GITHUB_OUTPUT
       - name: Prune old packages
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
