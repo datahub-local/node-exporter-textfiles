@@ -20,11 +20,73 @@ The entrypoint script is putting the output into the directory `/var/lib/node_ex
 
 ### Variables
 
-| Name              | Default                  | Description                                                      |
-|-------------------|--------------------------|------------------------------------------------------------------|
-| `SCRIPT`          | `smartmon.sh`            | Which of the node_exporter textfile collector scripts to run.    |
-| `OUTPUT_PATH`     | `/var/lib/node_exporter` | Directory of the output file.                                    |
-| `OUTPUT_FILENAME` | `smartmon`               | Name of the output file (file ending must not be added `.prom`). |
-| `INTERVAL`        | `300`                    | Interval at which to run the script at.                          |
+| Name          | Default                  | Description                                                                       |
+|---------------|--------------------------|-----------------------------------------------------------------------------------|
+| `SCRIPTS`     | `smartmon.py`            | Comma-separated list of textfile collector scripts to run.                        |
+| `SCRIPT`      | -                        | Deprecated alias for `SCRIPTS`, used only when `SCRIPTS` is unset.                |
+| `OUTPUT_PATH` | `/var/lib/node_exporter` | Directory of the output files.                                                    |
+| `INTERVAL`    | `300`                    | Interval at which the whole list of scripts is run.                               |
+| `DEBUG`       | -                        | If set, the entrypoint runs with `set -ex`.                                       |
 
-Any flags / args given to the container are passed to the `SCRIPT` that will be executed.
+Each script writes to `${OUTPUT_PATH}/<script name without extension>.prom`, so
+`SCRIPTS="nutmon.py,smartmon.py,updates.py"` produces `nutmon.prom`, `smartmon.prom` and
+`updates.prom`.
+
+Any flags / args given to the container are passed to *every* script in `SCRIPTS`.
+
+## Custom scripts
+
+Alongside the upstream collectors, this image ships:
+
+| Script       | Metrics prefix                | Description                                                    |
+|--------------|-------------------------------|----------------------------------------------------------------|
+| `smartmon.py`| `smartmon_`                   | SMART values via `smartctl`, including NVMe and USB bridges.   |
+| `nutmon.py`  | `network_ups_tools_`          | UPS values from a NUT server.                                  |
+| `updates.py` | `node_apt_`, `node_reboot_`   | Pending OS updates on the **host**.                            |
+
+### `updates.py`
+
+Reports how far behind the node's packages are:
+
+```
+node_apt_upgrades_pending                   # packages apt would install or upgrade
+node_apt_security_upgrades_pending          # of those, packages from a security origin
+node_reboot_required                        # /run/reboot-required exists on the host
+node_apt_package_cache_timestamp_seconds    # how fresh the host's apt metadata is
+```
+
+The container's own apt database describes the *image*, not the node, so this script reads
+the host by entering PID 1's mount namespace with `nsenter`. It therefore needs
+`hostPID: true` and `privileged: true`; without them it logs why and emits no metrics.
+
+The host is only ever simulated, never modified:
+
+```console
+nsenter -t 1 -m -- apt-get -s -o Debug::NoLocking=1 dist-upgrade
+```
+
+`Debug::NoLocking=1` avoids taking the host apt lock, so this cannot collide with
+`unattended-upgrades`. `dist-upgrade` is used rather than plain `upgrade` because plain
+`upgrade` omits any package that needs another package installed or removed, which hides
+kernel ABI bumps (`linux-image-*`).
+
+Because an apt simulate is far slower than the other collectors, results are cached in
+`/tmp` and recomputed at most every 15 minutes; in between, the cached values are
+re-printed. Mount `/tmp` as an `emptyDir` so a pod restart recomputes from cold.
+
+`node_apt_package_cache_timestamp_seconds` is worth alerting on: the counts are only as
+fresh as the host's last `apt update`, and a node whose apt metadata has gone stale
+otherwise reports `0 pending` for the wrong reason.
+
+On a host where the update state cannot be read at all - no `nsenter`, no `apt-get`, a
+failing simulate, unparseable output - the script prints nothing and exits 0, leaving an
+empty `.prom`, and explains itself on stderr (`kubectl logs`). This is the expected
+outcome on appliance-style nodes such as TrueNAS.
+
+| Flag             | Default                             | Description                                     |
+|------------------|-------------------------------------|-------------------------------------------------|
+| `--target-pid`   | `1`                                 | PID whose mount namespace holds the host.       |
+| `--apt-mode`     | `dist-upgrade`                      | `dist-upgrade`, `full-upgrade` or `upgrade`.    |
+| `--cache-file`   | `/tmp/updates-collector-cache.json` | Where computed values are cached.               |
+| `--cache-ttl`    | `900`                               | Seconds before recomputing; `0` disables.       |
+| `--timeout`      | `60`                                | Seconds allowed per host namespace command.     |
