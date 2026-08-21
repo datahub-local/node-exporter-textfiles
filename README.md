@@ -81,9 +81,12 @@ cannot answer must not be asked every cycle.
 
 Mind the sidecar's CPU limit when sizing `--timeout`. Measured on an arm64 Orange Pi node:
 the simulate takes **~18s** given a full core, but **78-108s** under a `300m` CPU limit with
-the sibling collectors competing for it. Hence the 300s default. Peak RSS of the simulate
-itself was ~110 MiB, so a sidecar sharing a 196Mi limit with `smartmon.py` and `nutmon.py`
-is close to the line - budget ~320Mi if you run all three.
+the sibling collectors competing for it. Hence the 300s default - a 60s timeout is not
+survivable there.
+
+Memory is less of a concern than it first looks. The simulate's own peak RSS is ~110 MiB,
+but most of that is the file-backed apt cache mmap, which is reclaimable: running all three
+scripts under a `196Mi` limit held at ~87 MiB working set with no OOM kill and no restarts.
 
 `node_apt_package_cache_timestamp_seconds` is worth alerting on: the counts are only as
 fresh as the host's last `apt update`, and a node whose apt metadata has gone stale
