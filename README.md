@@ -74,6 +74,17 @@ Because an apt simulate is far slower than the other collectors, results are cac
 `/tmp` and recomputed at most every 15 minutes; in between, the cached values are
 re-printed. Mount `/tmp` as an `emptyDir` so a pod restart recomputes from cold.
 
+The throttle covers *attempts*, not just successes: a failed attempt is remembered too and
+retried after `--failure-ttl` rather than on the next `INTERVAL` tick. This matters because
+a timeout costs the container's whole CPU quota for its full duration, so a host that
+cannot answer must not be asked every cycle.
+
+Mind the sidecar's CPU limit when sizing `--timeout`. Measured on an arm64 Orange Pi node:
+the simulate takes **~18s** given a full core, but **78-108s** under a `300m` CPU limit with
+the sibling collectors competing for it. Hence the 300s default. Peak RSS of the simulate
+itself was ~110 MiB, so a sidecar sharing a 196Mi limit with `smartmon.py` and `nutmon.py`
+is close to the line - budget ~320Mi if you run all three.
+
 `node_apt_package_cache_timestamp_seconds` is worth alerting on: the counts are only as
 fresh as the host's last `apt update`, and a node whose apt metadata has gone stale
 otherwise reports `0 pending` for the wrong reason.
@@ -89,4 +100,5 @@ outcome on appliance-style nodes such as TrueNAS.
 | `--apt-mode`     | `dist-upgrade`                      | `dist-upgrade`, `full-upgrade` or `upgrade`.    |
 | `--cache-file`   | `/tmp/updates-collector-cache.json` | Where computed values are cached.               |
 | `--cache-ttl`    | `900`                               | Seconds before recomputing; `0` disables.       |
-| `--timeout`      | `60`                                | Seconds allowed per host namespace command.     |
+| `--failure-ttl`  | `300`                               | Seconds before retrying a failed attempt.       |
+| `--timeout`      | `300`                               | Seconds allowed per host namespace command.     |

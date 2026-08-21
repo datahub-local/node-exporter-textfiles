@@ -58,7 +58,13 @@ DEFAULT_CACHE_FILE = "/tmp/updates-collector-cache.json"
 # arm64 nodes. Recompute at most this often and re-print cached values
 # otherwise. /tmp is a tmpfs emptyDir, so a pod restart correctly recomputes.
 DEFAULT_CACHE_TTL = 15 * 60
-DEFAULT_TIMEOUT = 60
+# Retry sooner than a success refresh, but not every INTERVAL: a timeout burns
+# the whole CPU quota, so a node that cannot answer must not be asked every cycle.
+DEFAULT_FAILURE_TTL = 5 * 60
+# Generous on purpose. The simulate takes ~18s on an arm64 node given a full
+# core, but the sidecar's CPU limit is 300m, and under that quota (with the
+# sibling collectors competing) it was measured at 78-108s. 60s was not enough.
+DEFAULT_TIMEOUT = 300
 DEFAULT_TARGET_PID = 1
 
 # Force a predictable locale in the host namespace so the summary line below
@@ -277,8 +283,17 @@ def render(values):
     return generate_latest(registry).decode()
 
 
-def read_cache(path, ttl):
-    """Return cached values if they exist and are younger than `ttl`, else None."""
+def read_cache(path, success_ttl, failure_ttl):
+    """Return the last cached attempt if it is still fresh, else None.
+
+    The throttle applies to *attempts*, not just successes: a failed attempt is
+    remembered too, so a host that cannot answer is not re-asked on every
+    60s cycle. A timeout costs the whole CPU quota for its full duration, so
+    retrying that often would starve the sibling collectors.
+
+    Returns:
+        {"values": dict|None, "reason": str, "age": float} or None to recompute.
+    """
     try:
         with open(path) as handle:
             cache = json.load(handle)
@@ -291,15 +306,19 @@ def read_cache(path, ttl):
     except (OSError, ValueError, KeyError, TypeError) as err:
         log("unusable cache at %s (%s), recomputing" % (path, err))
         return None
+
+    ttl = success_ttl if values is not None else failure_ttl
     if age < 0 or age >= ttl:
-        log("cache at %s is %ds old, refreshing" % (path, age))
+        log("cached attempt is %ds old (ttl %ds), refreshing" % (age, ttl))
         return None
-    log("serving cached values (%ds old, ttl %ds)" % (age, ttl))
-    return values
+    return {"values": values, "reason": cache.get("reason") or "", "age": age}
 
 
-def write_cache(path, values):
-    """Atomically replace the cache file. A failure here is never fatal."""
+def write_cache(path, values, reason=""):
+    """Atomically replace the cache file. A failure here is never fatal.
+
+    `values` is None to record a failed attempt, with `reason` for the log.
+    """
     temp_path = None
     try:
         directory = os.path.dirname(path) or "."
@@ -307,7 +326,10 @@ def write_cache(path, values):
             "w", dir=directory, prefix=".updates-cache.", delete=False
         ) as handle:
             temp_path = handle.name
-            json.dump({"timestamp": time.time(), "values": values}, handle)
+            json.dump(
+                {"timestamp": time.time(), "values": values, "reason": reason},
+                handle,
+            )
         os.replace(temp_path, path)
     except Exception as err:  # noqa: BLE001 - a traceback here would be output
         log("could not write cache to %s: %s" % (path, err))
@@ -343,6 +365,12 @@ def main():
         help="seconds before cached values are recomputed (0 disables caching)",
     )
     parser.add_argument(
+        "--failure-ttl",
+        type=int,
+        default=DEFAULT_FAILURE_TTL,
+        help="seconds before retrying after a failed attempt",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=DEFAULT_TIMEOUT,
@@ -354,19 +382,42 @@ def main():
     if unknown:
         log("ignoring arguments meant for another collector: %s" % " ".join(unknown))
 
-    values = read_cache(args.cache_file, args.cache_ttl) if args.cache_ttl > 0 else None
-    if values is None:
+    caching = args.cache_ttl > 0
+    cached = (
+        read_cache(args.cache_file, args.cache_ttl, args.failure_ttl)
+        if caching
+        else None
+    )
+
+    if cached is not None:
+        values = cached["values"]
+        if values is None:
+            # The last attempt failed recently; do not pay for another one yet.
+            log(
+                "last attempt %ds ago failed (%s); not retrying for %ds; "
+                "emitting no metrics"
+                % (cached["age"], cached["reason"] or "no reason recorded",
+                   args.failure_ttl)
+            )
+            return 0
+        log("serving cached values (%ds old)" % cached["age"])
+    else:
         try:
             values = collect(args.target_pid, args.timeout, args.apt_mode)
         except HostUnreachable as err:
             # Emitting nothing yields an empty .prom, which is valid and simply
             # produces no metrics. Never emit a partial exposition.
             log("%s; emitting no metrics" % err)
+            if caching:
+                write_cache(args.cache_file, None, reason=str(err))
             return 0
         except Exception as err:  # noqa: BLE001 - a traceback here would be output
-            log("unexpected failure (%s: %s); emitting no metrics" % (type(err).__name__, err))
+            reason = "unexpected failure (%s: %s)" % (type(err).__name__, err)
+            log("%s; emitting no metrics" % reason)
+            if caching:
+                write_cache(args.cache_file, None, reason=reason)
             return 0
-        if args.cache_ttl > 0:
+        if caching:
             write_cache(args.cache_file, values)
 
     try:
